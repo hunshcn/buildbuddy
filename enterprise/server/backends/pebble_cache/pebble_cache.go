@@ -3299,6 +3299,14 @@ func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.Stor
 }
 
 func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+	shouldDebug := r.GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
+	debug := func(format string, args ...interface{}) {
+		if !shouldDebug {
+			return
+		}
+		log.CtxInfof(ctx, format, args...)
+	}
+
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -3352,8 +3360,10 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	var reader io.ReadCloser
 	md := fileMetadata.GetStorageMetadata()
 	if chunkedMD := md.GetChunkedMetadata(); chunkedMD != nil {
+		debug("VVV chunked reader")
 		reader, err = p.newChunkedReader(ctx, chunkedMD, shouldDecompress)
 	} else {
+		debug("VVV non-chunked reader")
 		reader, err = p.fileStorer.NewReader(ctx, blobDir, md, offset, limit)
 	}
 	if err != nil {
@@ -3368,6 +3378,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 
 	if !rawStorage {
 		if shouldDecrypt {
+			debug("VVV decryption reader")
 			d, err := p.env.GetCrypter().NewDecryptor(ctx, r.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
 				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
@@ -3375,6 +3386,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 			reader = d
 		}
 		if shouldDecompress && md.GetChunkedMetadata() == nil {
+			debug("VVV decompressing reader")
 			// We don't need to decompress the chunked reader's content since
 			// it already returns decompressed content from its children.
 			dr, err := compression.NewZstdDecompressingReader(reader)

@@ -559,6 +559,14 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		d.headerValidated = true
 	}
 
+	shouldDebug := d.digest.GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
+	debug := func(format string, args ...interface{}) {
+		if !shouldDebug {
+			return
+		}
+		log.Infof(format, args...)
+	}
+
 	// No plaintext available, need to decrypt another chunk.
 	if d.bufIdx >= d.bufLen {
 		n, err := io.ReadFull(d.r, d.buf)
@@ -590,6 +598,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 
 		pt, err := d.ciph.Open(ciphertext[:0], nonce, ciphertext, chunkAuth)
 		if err != nil {
+			debug("VVV decryption failed: %v", err)
 			metrics.EncryptionDecryptionErrorCount.Inc()
 			return 0, err
 		}

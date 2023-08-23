@@ -150,8 +150,8 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 
+	shouldDebug := r.GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
 	debug := func(format string, args ...interface{}) {
-		shouldDebug := r.GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
 		if !shouldDebug {
 			return
 		}
@@ -162,6 +162,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	buf := copyBuf[:bufSize]
 	bytesTransferredToClient := 0
+	loops := 0
 	for {
 		n, err := io.ReadFull(reader, buf)
 		debug("VVV read %d err %v", n, err)
@@ -182,6 +183,10 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 				return err
 			}
 			continue
+		}
+		loops++
+		if shouldDebug && loops > 100 {
+			return status.InternalErrorf("VVV too many loops")
 		}
 	}
 
