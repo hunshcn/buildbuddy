@@ -150,26 +150,43 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 
+	debug := func(format string, args ...interface{}) {
+		shouldDebug := r.GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
+		if !shouldDebug {
+			return
+		}
+		log.CtxInfof(ctx, format, args...)
+	}
+
+	debug("VVV read", len(buf))
+
 	buf := copyBuf[:bufSize]
 	bytesTransferredToClient := 0
 	for {
 		n, err := io.ReadFull(reader, buf)
+		debug("VVV read %d err %v", n, err)
 		bytesTransferredToClient += n
 		if err == io.EOF {
+			debug("VVV EOF break")
 			break
 		} else if err == io.ErrUnexpectedEOF {
+			debug("VVV short EOF send %d", n)
 			if err := stream.Send(&bspb.ReadResponse{Data: buf[:n]}); err != nil {
 				return err
 			}
 		} else if err != nil {
 			return err
 		} else {
+			debug("VVV send %d", len(buf))
 			if err := stream.Send(&bspb.ReadResponse{Data: buf}); err != nil {
 				return err
 			}
 			continue
 		}
 	}
+
+	debug("VVV done read", len(buf))
+
 	// If the reader was not passed through the compressor above, the data will be sent
 	// as is from the cache to the client, and the number of bytes will be equal
 	bytesFromCache := int64(bytesTransferredToClient)
