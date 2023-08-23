@@ -297,6 +297,14 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 }
 
 func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
+	shouldDebug := req.GetResource().GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
+	debug := func(format string, args ...interface{}) {
+		if !shouldDebug {
+			return
+		}
+		log.CtxInfof(stream.Context(), format, args...)
+	}
+	debug("VVV cache proxy read")
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
 		return err
@@ -321,6 +329,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	buf := copyBuf[:bufSize]
 	for {
 		n, err := io.ReadFull(reader, buf)
+		debug("VVV cache proxy read %d err %v", n, err)
 		if err == io.EOF {
 			break
 		} else if err == io.ErrUnexpectedEOF {
@@ -334,6 +343,8 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 			continue
 		}
 	}
+
+	debug("VVV cache proxy read done err %v", err)
 
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 	return err
@@ -524,6 +535,14 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 }
 
 func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	shouldDebug := r.GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
+	debug := func(format string, args ...interface{}) {
+		if !shouldDebug {
+			return
+		}
+		log.CtxInfof(ctx, format, args...)
+	}
+	debug("VVV remote reader %s", peer)
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -557,6 +576,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 		readOnce := false
 		for {
 			rsp, err := stream.Recv()
+			debug("VVV read %q response %v err %v", peer, rsp, err)
 			if !readOnce {
 				firstError <- err
 				readOnce = true
@@ -574,8 +594,11 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.Reso
 	}()
 	err = <-firstError
 
+	debug("VVV done remote read %q", peer)
+
 	// If we get an EOF, and we're expecting one - don't return an error.
 	if err == io.EOF && r.GetDigest().GetSizeBytes() == offset {
+		debug("VVV don't return err")
 		return reader, nil
 	}
 	return reader, err

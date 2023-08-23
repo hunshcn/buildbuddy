@@ -182,7 +182,6 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 			if err := stream.Send(&bspb.ReadResponse{Data: buf}); err != nil {
 				return err
 			}
-			continue
 		}
 		loops++
 		if shouldDebug && loops > 100 {

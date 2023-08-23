@@ -567,6 +567,8 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		log.Infof(format, args...)
 	}
 
+	debug("VVV decryptor read")
+
 	// No plaintext available, need to decrypt another chunk.
 	if d.bufIdx >= d.bufLen {
 		n, err := io.ReadFull(d.r, d.buf)
