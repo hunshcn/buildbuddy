@@ -158,7 +158,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		log.CtxInfof(ctx, format, args...)
 	}
 
-	debug("VVV read", len(buf))
+	debug("VVV read")
 
 	buf := copyBuf[:bufSize]
 	bytesTransferredToClient := 0
