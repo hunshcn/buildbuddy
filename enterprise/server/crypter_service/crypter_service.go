@@ -562,6 +562,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 	// No plaintext available, need to decrypt another chunk.
 	if d.bufIdx >= d.bufLen {
 		n, err := io.ReadFull(d.r, d.buf)
+		//log.Infof("read %d bytes", n)
 		// ErrUnexpectedEOF indicates that the underlying reader returned EOF
 		// before the buffer could be filled, which is expected on the last
 		// chunk.
@@ -579,6 +580,8 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		if n < nonceSize {
 			return 0, status.InternalError("could not read nonce for chunk")
 		}
+
+		//log.Infof("counter %d digest %s groupid %s last chunk %t", d.chunkCounter, d.digest, d.groupID, lastChunk)
 
 		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID, lastChunk)
 		d.chunkCounter++

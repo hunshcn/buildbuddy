@@ -1594,7 +1594,15 @@ func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, er
 		return nil, err
 	}
 	defer rc.Close()
-	return io.ReadAll(rc)
+	shouldDebug := r.GetDigest().GetHash() == "b76f42a1431d9faf0fb2d240b0df76f9e46c6e20823485781d83c6c29ce10bb2"
+	if shouldDebug {
+		log.CtxInfof(ctx, "VVV get hash")
+	}
+	data, err := io.ReadAll(rc)
+	if shouldDebug {
+		log.CtxInfof(ctx, "VVV data %d err %v", len(data), err)
+	}
+	return data, err
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
