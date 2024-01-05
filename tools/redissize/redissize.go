@@ -23,6 +23,7 @@ func main() {
 	c := redis.NewClient(&redis.Options{Addr: *target})
 
 	sizes := make(map[string]int64)
+	counts := make(map[string]int64)
 
 	type prefixSize struct {
 		prefix string
@@ -43,20 +44,36 @@ func main() {
 		}
 		cursor = newCursor
 
-		for _, k := range keys {
+		cmds, err := c.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+			for _, k := range keys {
+				pipe.MemoryUsage(ctx, k)
+			}
+			return nil
+		})
+		if err != nil {
+			log.Fatalf("Pipeline error: %s", err)
+		}
+
+		for i, k := range keys {
 			p := strings.Split(k, "/")[0]
-			v, err := c.MemoryUsage(ctx, k).Result()
+			v, err := cmds[i].(*redis.IntCmd).Result()
 			if err != nil && err != redis.Nil {
 				log.Warningf("memusage err: %s", err)
 			}
 			if _, err := uuid.Parse(p); err == nil {
 				p = "logs"
 			}
+			if p == "hit_tracker" && strings.HasSuffix(k, "/results") {
+				p = "hit_tracker_results"
+			} else if p == "hit_tracker" {
+				p = "hit_tracker_counters"
+			}
 			//if v > 3500 {
 			//	log.Infof("key %q v %d", k, v)
 			//}
 			totalSize += v
 			sizes[p] += v
+			counts[p] += 1
 			count++
 			if count%1000 == 0 {
 				log.Infof("keys scanned: %d", count)
@@ -75,7 +92,7 @@ func main() {
 					}
 				})
 				for _, v := range s {
-					log.Infof("Prefix %q size %s", v.prefix, units.BytesSize(float64(v.size)))
+					log.Infof("Prefix %q size %s, avg %s, n=%d", v.prefix, units.BytesSize(float64(v.size)), units.BytesSize(float64(v.size/counts[v.prefix])), counts[v.prefix])
 				}
 				fmt.Println()
 			}
