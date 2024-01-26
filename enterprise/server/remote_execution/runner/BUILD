@@ -56,6 +56,7 @@ go_library(
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/docker",
             "//enterprise/server/remote_execution/containers/firecracker",
+            "//enterprise/server/remote_execution/containers/nix",
             "//enterprise/server/remote_execution/containers/podman",
             "//proto:vfs_go_proto",
             "//server/util/perms",

@@ -837,6 +837,8 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 
 		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
 			continue
+		} else if isolation == platform.NixContainerType {
+			continue
 		}
 
 		// Warm up the default execution image for all isolation types, as well

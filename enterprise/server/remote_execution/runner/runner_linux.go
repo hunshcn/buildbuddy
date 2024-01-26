@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/nix"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -51,6 +52,10 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
 		}
 		providers[platform.FirecrackerContainerType] = p
+	}
+
+	if executor.SupportsIsolation((platform.NixContainerType)) {
+		providers[platform.NixContainerType] = nix.NewProvider(p.env)
 	}
 
 	if executor.SupportsIsolation(platform.BareContainerType) {

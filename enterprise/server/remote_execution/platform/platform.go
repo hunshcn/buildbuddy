@@ -28,6 +28,7 @@ var (
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
+	enableNix                  = flag.Bool("executor.enable_nix", false, "Enables running execution commands in a nix shell.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
@@ -87,6 +88,7 @@ const (
 	EnvOverridesPropertyName             = "env-overrides"
 	EnvOverridesBase64PropertyName       = "env-overrides-base64"
 	IncludeSecretsPropertyName           = "include-secrets"
+	NixPkgsPropertyName                  = "nix-pkgs"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -121,6 +123,7 @@ const (
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
 	SandboxContainerType     ContainerType = "sandbox"
+	NixContainerType         ContainerType = "nix"
 
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
@@ -193,6 +196,9 @@ type Properties struct {
 	// is enabled via flag, and instead uses the default / platform based
 	// sizing.
 	DisablePredictedTaskSize bool
+
+	// List of nix packages to use for this action.
+	NixPkgs []string
 
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
@@ -285,6 +291,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
 		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
+		NixPkgs:                   stringListProp(m, NixPkgsPropertyName),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
 	}, nil
@@ -362,6 +369,14 @@ func GetExecutorProperties() *ExecutorProperties {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, SandboxContainerType)
 		} else {
 			log.Warning("Sandbox was enabled, but is unsupported outside of darwin. Ignoring.")
+		}
+	}
+
+	if *enableNix {
+		if runtime.GOOS == "darwin" {
+			log.Warning("Nix was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, NixContainerType)
 		}
 	}
 
