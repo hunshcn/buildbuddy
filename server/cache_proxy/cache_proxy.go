@@ -135,18 +135,26 @@ func (p *CacheProxy) GetCapabilities(ctx context.Context, req *repb.GetCapabilit
 }
 
 func (p *CacheProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+	ctx = metadata.AppendToOutgoingContext(ctx, "digest", req.GetActionDigest().GetHash())
 	return p.acClient.GetActionResult(ctx, req)
 }
 
 func (p *CacheProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+	ctx = metadata.AppendToOutgoingContext(ctx, "digest", req.GetActionDigest().GetHash())
 	return p.acClient.UpdateActionResult(ctx, req)
 }
 
 func (p *CacheProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	if len(req.GetRequests()) == 1 {
+		ctx = metadata.AppendToOutgoingContext(ctx, "digest", req.GetRequests()[0].GetDigest().GetHash())
+	}
 	return p.casClient.BatchUpdateBlobs(ctx, req)
 }
 
 func (p *CacheProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	if len(req.GetDigests()) == 1 {
+		ctx = metadata.AppendToOutgoingContext(ctx, "digest", req.GetDigests()[0].GetHash())
+	}
 	return p.casClient.BatchReadBlobs(ctx, req)
 }
 
@@ -171,6 +179,9 @@ func (p *CacheProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddres
 }
 
 func (p *CacheProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	if len(req.GetBlobDigests()) == 1 {
+		ctx = metadata.AppendToOutgoingContext(ctx, "digest", req.GetBlobDigests()[0].GetHash())
+	}
 	localMissing, err := p.localCAS.FindMissingBlobs(ctx, req)
 	if err == nil && len(localMissing.GetMissingBlobDigests()) == 0 {
 		return localMissing, nil
@@ -200,6 +211,7 @@ func (p *CacheProxy) hasBlobLocally(ctx context.Context, instanceName string, d 
 
 func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	ctx := stream.Context()
+	ctx = metadata.AppendToOutgoingContext(ctx, "digest", req.GetResourceName())
 	resourceName, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	d := resourceName.GetDigest()
 	instanceName := resourceName.GetInstanceName()
