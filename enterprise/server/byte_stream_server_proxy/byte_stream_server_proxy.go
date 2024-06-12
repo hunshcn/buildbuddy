@@ -61,11 +61,8 @@ func NewByteStreamServerProxy(env environment.Env) (*ByteStreamServerProxy, erro
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	fmt.Println("====== Read ======")
-	fmt.Println(req)
 	err := s.localServer.Read(req, stream)
 	if status.IsNotFoundError(err) {
-		fmt.Println("===== NOT FOUND! =====")
 		return s.readRemote(req, stream)
 	}
 	return err
@@ -124,7 +121,8 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		if localStream != nil {
 			localReq := &bspb.WriteRequest{WriteOffset: localStream.offset, Data: rsp.Data}
 			if !localStream.initialized {
-				localReq.ResourceName = fuckupresourcename(req.ResourceName)
+				// TODO(iain): fix
+				localReq.ResourceName = req.ResourceName
 				localStream.initialized = true
 			}
 			localStream.offset += int64(len(rsp.Data))
@@ -135,10 +133,6 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		}
 	}
 	return nil
-}
-
-func fuckupresourcename(rn string) string {
-	return fmt.Sprintf("uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555%s", rn)
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {

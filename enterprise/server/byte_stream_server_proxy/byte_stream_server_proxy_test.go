@@ -51,7 +51,7 @@ func runRemoteByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *tes
 	streamRequestCounter := atomic.Int32{}
 	conn, err := testenv.LocalGRPCConn(ctx, env,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)),
-		// byte_stream APIs are only stremaing, so unary interceptor is unnecessary.
+		// byte_stream APIs are only streaming, so unary interceptor is unnecessary.
 		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
 	return bspb.NewByteStreamClient(conn), &streamRequestCounter
@@ -82,14 +82,6 @@ func TestRead(t *testing.T) {
 	clientConn, requestCount := runByteStreamServerProxy(ctx, remoteEnv, localEnv, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
-	// randStr := func(i int) string {
-	// 	rstr, err := random.RandomString(i)
-	// 	if err != nil {
-	// 		t.Error(err)
-	// 	}
-	// 	return rstr
-	// }
-	// simpleRn, simpleBuf := testdigest.NewRandomResourceAndBuf(t, 1234, rspb.CacheType_CAS, "")
 	cases := []struct {
 		wantError error
 		cacheType rspb.CacheType
@@ -299,8 +291,8 @@ func TestWrite(t *testing.T) {
 		tc.bazelVersion = "5.0.0"
 		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
 
-		// tc.bazelVersion = "5.1.0"
-		// t.Run(tc.name+", bazel "+tc.bazelVersion, run)
+		tc.bazelVersion = "5.1.0"
+		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
 	}
 }
 
