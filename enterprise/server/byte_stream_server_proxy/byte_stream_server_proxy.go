@@ -121,8 +121,8 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		if localStream != nil {
 			localReq := &bspb.WriteRequest{WriteOffset: localStream.offset, Data: rsp.Data}
 			if !localStream.initialized {
-				// TODO(iain): fix
-				localReq.ResourceName = "/uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555" + req.ResourceName
+				// Generate a fake prefix that passes the upload name regex.
+				localReq.ResourceName = "/uploads/00000000-0000-0000-0000-000000000000" + req.ResourceName
 				localStream.initialized = true
 			}
 			localStream.offset += int64(len(rsp.Data))
