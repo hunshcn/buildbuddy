@@ -19,7 +19,7 @@ const (
 	// Channel size to use for tee-ing writes to the local bytestream server.
 	// This value should be somewhat large to prevent blocking remote writes if
 	// the local server is slow for some reason.
-	localWriteChannelSize = 256
+	localWriteChannelSize = 512
 )
 
 type ByteStreamServerProxy struct {
@@ -122,7 +122,7 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 			localReq := &bspb.WriteRequest{WriteOffset: localStream.offset, Data: rsp.Data}
 			if !localStream.initialized {
 				// TODO(iain): fix
-				localReq.ResourceName = req.ResourceName
+				localReq.ResourceName = "/uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555" + req.ResourceName
 				localStream.initialized = true
 			}
 			localStream.offset += int64(len(rsp.Data))

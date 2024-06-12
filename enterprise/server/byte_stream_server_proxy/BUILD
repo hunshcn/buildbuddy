@@ -34,6 +34,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/compression",
         "//server/util/prefix",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//require",
