@@ -1694,7 +1694,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 	return status.NotFoundError("No forward key for pending execution")
 }
 
-func TestActionMerging(t *testing.T) {
+func TestActionMerging_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
@@ -1748,17 +1748,21 @@ func TestActionMerging_LongTask(t *testing.T) {
 		Arguments: []string{"sh", "-c", "sleep 60"},
 		Platform:  platform,
 	}
-	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
-	op1 := cmd1.WaitAccepted()
+	op1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"}).WaitAccepted()
 	WaitForPendingExecution(rbe.GetRedisClient(), op1)
+
+	op2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"}).WaitAccepted()
+	WaitForPendingExecution(rbe.GetRedisClient(), op2)
 
 	// Wait long enough for the first action-merging state to have expired.
 	time.Sleep(350 * time.Millisecond)
 
 	// Ensure actions are still merged against the running original execution.
-	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
-	op2 := cmd2.WaitAccepted()
-	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
+	op3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"}).WaitAccepted()
+	fmt.Println("op1: " + op1)
+	fmt.Println("op2: " + op2)
+	fmt.Println("op3: " + op3)
+	require.True(t, op3 == op1 || op3 == op2, "the third execution ID should be the same as one of the first two")
 }
 
 func TestActionMerging_ClaimingAppDies(t *testing.T) {

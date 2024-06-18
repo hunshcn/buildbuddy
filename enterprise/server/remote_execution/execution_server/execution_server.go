@@ -577,6 +577,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
+	runAction := true
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
@@ -597,11 +598,12 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		// Check if there's already an identical action pending execution. If
 		// so, wait on the result of that execution instead of starting a new
 		// one.
-		ee, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		ee, count, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
 		if err != nil {
 			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 		}
-		if ee != "" {
+		if action_merger.MergeAction(count) {
+			runAction = false
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
 			log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
 			executionID = ee
@@ -616,7 +618,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 
 	// Create a new execution unless we found an existing identical action we
 	// can wait on.
-	if executionID == "" {
+	if runAction && executionID == "" {
+		// unmerged case
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
@@ -627,13 +630,19 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		executionID = newExecutionID
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
-		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
+		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", newExecutionID)
+	}
+	if runAction && executionID != "" {
+		// hedge case
+		log.CtxInfof(ctx, "Scheduling new hedged execution for %q for invocation %q", downloadString, invocationID)
+		_, err := s.Dispatch(ctx, req)
+		if err != nil {
+			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
+			return err
+		}
 	}
 
-	waitReq := repb.WaitExecutionRequest{
-		Name: executionID,
-	}
-	return s.waitExecution(ctx, &waitReq, stream, waitOpts{isExecuteRequest: true})
+	return s.waitExecution(ctx, &repb.WaitExecutionRequest{Name: executionID}, stream, waitOpts{isExecuteRequest: true})
 }
 
 // WaitExecution waits for an execution operation to complete. When the client initially

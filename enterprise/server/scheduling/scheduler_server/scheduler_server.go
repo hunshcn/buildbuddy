@@ -1614,7 +1614,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 		// If the task was successfully claimed, record action-merging state.
 		if claimed {
-			action_merger.RecordClaimedExecution(ctx, s.rdb, taskID, s.actionMergingLeaseTTL)
+			err := action_merger.RecordClaimedExecution(ctx, s.rdb, taskID, s.actionMergingLeaseTTL)
 			if err != nil {
 				log.CtxWarningf(ctx, "could not record claimed pending execution %q: %s", taskID, err)
 			}

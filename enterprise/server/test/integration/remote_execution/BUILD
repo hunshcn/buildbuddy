@@ -10,7 +10,7 @@ go_test(
     timeout = "long",
     srcs = ["remote_execution_test.go"],
     args = ["--test.v"],
-    shard_count = 11,
+    shard_count = 1,
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
