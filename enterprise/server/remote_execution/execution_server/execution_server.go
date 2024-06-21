@@ -577,6 +577,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
+	hedge := false
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
@@ -597,7 +598,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		// Check if there's already an identical action pending execution. If
 		// so, wait on the result of that execution instead of starting a new
 		// one.
-		ee, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		ee, h, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		hedge = h
 		if err != nil {
 			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 		}
@@ -628,6 +630,18 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
+	}
+	// Unfortunately this doesn't quite work because without the client paying
+	// attention to this execution, it doesn't write its result to the action
+	// cache :'-(
+	if hedge {
+		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest)
+		log.CtxInfof(ctx, "Scheduling new hedged execution for %q for invocation %q", downloadString, invocationID)
+		_, err := s.Dispatch(ctx, req)
+		if err != nil {
+			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
+			return err
+		}
 	}
 
 	waitReq := repb.WaitExecutionRequest{

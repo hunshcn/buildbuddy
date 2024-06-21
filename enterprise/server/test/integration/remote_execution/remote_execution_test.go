@@ -1694,7 +1694,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 	return status.NotFoundError("No forward key for pending execution")
 }
 
-func TestActionMerging(t *testing.T) {
+func TestActionMerging_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
@@ -1798,6 +1798,53 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
 	require.NotEqual(t, op1, op2, "unexpected action merge: dead app shouldn't block future actions")
+}
+
+func TestActionMerging_FirstRunStuck(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	// This script takes a long time the first time it's run, but subsequent
+	// runs finish very quickly.
+	fname := fmt.Sprintf("/tmp/test/%s", uuid.New().String())
+	script := fmt.Sprintf(`FILE="%s"
+if [ -f $FILE ]; then
+	return
+else
+	mkdir -p /tmp/test
+	touch $FILE
+	sleep 60
+fi`, fname)
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", script},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+			},
+		},
+	}
+
+	// Run the command the first time, this will take about a minute.
+	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
+	op1 := cmd1.WaitAccepted()
+	WaitForPendingExecution(rbe.GetRedisClient(), op1)
+
+	// The next action will merge against the slow run above, but also run a
+	// hedged action which should finish quickly.
+	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
+	op2 := cmd2.WaitAccepted()
+	require.Equal(t, op1, op2, "expected actions to be merged")
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Once the hedged action has finished, the action result should be in the
+	// cache, even though the first action is still stuck.
+	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"})
+	op3 := cmd3.WaitAccepted()
+	require.NotEqual(t, op1, op3, "expected action to be hedged")
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
