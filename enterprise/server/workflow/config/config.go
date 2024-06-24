@@ -45,7 +45,13 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
+	Commands          []Command         `yaml:"commands"`
 	Timeout           *time.Duration    `yaml:"timeout"`
+}
+
+type Command struct {
+	Args              string `yaml:"args"`
+	ContinueOnFailure bool   `yaml:"continue_on_failure"`
 }
 
 func (a *Action) GetTriggers() *Triggers {

@@ -1,4 +1,12 @@
 actions:
+  - name: Maggie
+    container_image: ubuntu-20.04
+    commands:
+      - args: exit 1
+        continue_on_failure: true
+      - args: bash -c "exit 1"
+        continue_on_failure: false
+      - args: echo "HELLO"
   - name: Test
     container_image: ubuntu-20.04
     triggers:

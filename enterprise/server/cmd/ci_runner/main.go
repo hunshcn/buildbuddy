@@ -993,6 +993,44 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 
+	// TODO: Do we need to do something special for artifacts dir?
+	for _, cmd := range action.Commands {
+		runErr := runBashCommand(ctx, cmd.Args, nil, action.BazelWorkspaceDir, ar.reporter)
+		exitCode := getExitCode(runErr)
+		// Flush progress after every command.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
+		if err := ar.reporter.FlushProgress(); err != nil {
+			break
+		}
+
+		if exitCode != noExitCode {
+			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+		}
+
+		// If this is a workflow, kill-signal the current process on certain
+		// exit codes (rather than exiting) so that the workflow action is
+		// retried. Note that we do this immediately after the Bazel command is
+		// completed so that the outer workflow invocation gets disconnected
+		// rather than finishing with an error.
+		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
+			p, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				return err
+			}
+			if err := p.Kill(); err != nil {
+				return err
+			}
+		}
+
+		if exitCode != 0 {
+			if cmd.ContinueOnFailure {
+				ar.reporter.Printf("Continuing on failure to the next command...\n")
+			} else {
+				return runErr
+			}
+		}
+	}
+
 	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
 
@@ -2131,6 +2169,28 @@ func gitRemoteName(repoURL string) string {
 	return forkGitRemoteName
 }
 
+func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir string, outputSink io.Writer) error {
+	tokens, err := shlex.Split(cmd)
+	if err != nil {
+		return err
+	} else if len(tokens) < 1 {
+		return nil
+	}
+
+	if len(tokens) >= 2 && tokens[0] == "bash" && tokens[1] == "-c" {
+		tokens = tokens[2:]
+	}
+
+	if err := printCommandLine(outputSink, "", tokens...); err != nil {
+		return err
+	}
+
+	tokens = expandEnv(tokens)
+	cmd = strings.Join(tokens, " ")
+	args := []string{"-c", cmd}
+	return runCommand(ctx, "bash", args, env, dir, outputSink)
+}
+
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Env = os.Environ()
@@ -2157,6 +2217,11 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	if ctxErr := ctx.Err(); ctxErr == context.DeadlineExceeded {
 		_, _ = outputSink.Write([]byte(fmt.Sprintf("Remote run exceeded timeout (%s). Aborting...", timeout.String())))
 	}
+
+	if err != nil {
+		_, _ = outputSink.Write([]byte(aurora.Sprintf(aurora.Red("Command failed: %s\n"), err)))
+	}
+
 	return err
 }
 
