@@ -6,17 +6,18 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type CASServerProxy struct {
-	env         environment.Env
-	localCache  interfaces.Cache
-	remoteCache repb.ContentAddressableStorageClient
+	env          environment.Env
+	localServer  content_addressable_storage_server.ContentAddressableStorageServer
+	remoteClient repb.ContentAddressableStorageClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -29,35 +30,98 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewCASServerProxy(env environment.Env) (*CASServerProxy, error) {
-	localCache := env.GetCache()
-	if localCache == nil {
-		return nil, fmt.Errorf("A cache is required to enable the ContentAddressableStorageServerProxy")
+	localServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	if err != nil {
+		return nil, err
 	}
-	remoteCache := env.GetContentAddressableStorageClient()
-	if remoteCache == nil {
+	remoteClient := env.GetContentAddressableStorageClient()
+	if remoteClient == nil {
 		return nil, fmt.Errorf("A ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
 	return &CASServerProxy{
-		env:         env,
-		localCache:  localCache,
-		remoteCache: remoteCache,
+		env:          env,
+		localServer:  *localServer,
+		remoteClient: remoteClient,
 	}, nil
 }
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
-	return s.remoteCache.FindMissingBlobs(ctx, req)
+	resp, err := s.localServer.FindMissingBlobs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.MissingBlobDigests) == 0 {
+		return resp, nil
+	}
+	remoteReq := repb.FindMissingBlobsRequest{
+		InstanceName:   req.InstanceName,
+		BlobDigests:    resp.MissingBlobDigests,
+		DigestFunction: req.DigestFunction,
+	}
+	return s.remoteClient.FindMissingBlobs(ctx, &remoteReq)
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
-	return s.remoteCache.BatchUpdateBlobs(ctx, req)
+	go s.localServer.BatchUpdateBlobs(context.Background(), req)
+	return s.remoteClient.BatchUpdateBlobs(ctx, req)
 }
 
 func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
-	return s.remoteCache.BatchReadBlobs(ctx, req)
+	localResp, err := s.localServer.BatchReadBlobs(ctx, req)
+	if err != nil {
+		return s.batchReadBlobsRemote(ctx, req)
+	}
+	if len(localResp.Responses) == len(req.Digests) {
+		return localResp, nil
+	}
+	localDigests := make([]*repb.Digest, len(localResp.Responses))
+	for _, response := range localResp.Responses {
+		if response.Status == 0 {
+			localDigests = append(localDigests, response.Digest)
+		}
+	}
+	missing, _ := digest.Diff(req.Digests, localDigests)
+	remoteReq := repb.BatchReadBlobs{
+		InstanceName:          req.InstanceName,
+		Digests:               missing,
+		AcceptableCompressors: req.AcceptableCompressors,
+		DigestFunction:        req.DigestFunction,
+	}
+	remoteResp, err := s.batchReadBlobsRemote(ctx, remoteReq)
+	mergedResp := localResp
+	for _, response := range remoteResp.Responses {
+		mergedResp.Responses = append(mergedResp.Responses, response)
+	}
+	return mergedResp, nil
 }
 
+func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	readResp, err := s.remoteClient.BatchReadBlobs(ctx, readReq)
+	if err != nil {
+		return nil, err
+	}
+	updateReq := repb.BatchUpdateBlobsRequest{
+		InstanceName:   readReq.InstanceName,
+		DigestFunction: readReq.DigestFunction,
+	}
+	for _, response := range readResp {
+		if response.Status != 0 {
+			// ????
+			continue
+		}
+		updateReq.Requests = append(updateReq.Reqests, &repb.BatchUpdateBlobsRequest_Request{
+			Digest:     response.Digest,
+			Data:       response.Data,
+			Compressor: response.Compressor,
+		})
+	}
+	go s.localServer.BatchUpdateBlobs(context.Background(), updateReq)
+	return readResp, nil
+}
+
+// ooof
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
-	remoteStream, err := s.remoteCache.GetTree(context.Background(), req)
+	remoteStream, err := s.remoteClient.GetTree(context.Background(), req)
 	if err != nil {
 		return err
 	}

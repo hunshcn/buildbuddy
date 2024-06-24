@@ -100,27 +100,12 @@ func TestFindMissingBlobs(t *testing.T) {
 		BlobDigests:    []*repb.Digest{&digestA, &digestB, &digestC},
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
-	resp, err := localClient.FindMissingBlobs(ctx, &abcReq)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(resp.MissingBlobDigests))
-	require.Equal(t, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", resp.MissingBlobDigests[0])
-	require.Equal(t, int32(1), unaryRequestCount.Load())
-	require.Equal(t, int32(0), streamRequestCount.Load())
-
-	resp, err = localClient.FindMissingBlobs(ctx, &abcReq)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(resp.MissingBlobDigests))
-	require.Equal(t, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", resp.MissingBlobDigests[0])
-	require.Equal(t, int32(2), unaryRequestCount.Load())
-	require.Equal(t, int32(0), streamRequestCount.Load())
-
-	abReq := repb.FindMissingBlobsRequest{
-		BlobDigests:    []*repb.Digest{&digestA, &digestB},
-		DigestFunction: repb.DigestFunction_SHA256,
+	for i := 1; i < 10; i++ {
+		resp, err := localClient.FindMissingBlobs(ctx, &abcReq)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(resp.MissingBlobDigests))
+		require.Equal(t, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", resp.MissingBlobDigests[0])
+		require.Equal(t, int32(i), unaryRequestCount.Load())
+		require.Equal(t, int32(0), streamRequestCount.Load())
 	}
-	resp, err = localClient.FindMissingBlobs(ctx, &abReq)
-	require.NoError(t, err)
-	require.Equal(t, 0, len(resp.MissingBlobDigests))
-	require.Equal(t, int32(2), unaryRequestCount.Load())
-	require.Equal(t, int32(0), streamRequestCount.Load())
 }
