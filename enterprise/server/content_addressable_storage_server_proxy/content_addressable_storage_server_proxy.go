@@ -11,6 +11,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	"google.golang.org/grpc/codes"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -76,23 +78,23 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	}
 	localDigests := make([]*repb.Digest, len(localResp.Responses))
 	for _, response := range localResp.Responses {
-		if response.Status == 0 {
+		if response.Status.Code == int32(codes.OK) {
 			localDigests = append(localDigests, response.Digest)
 		}
 	}
 	missing, _ := digest.Diff(req.Digests, localDigests)
-	remoteReq := repb.BatchReadBlobs{
+	remoteReq := repb.BatchReadBlobsRequest{
 		InstanceName:          req.InstanceName,
 		Digests:               missing,
 		AcceptableCompressors: req.AcceptableCompressors,
 		DigestFunction:        req.DigestFunction,
 	}
-	remoteResp, err := s.batchReadBlobsRemote(ctx, remoteReq)
-	mergedResp := localResp
-	for _, response := range remoteResp.Responses {
-		mergedResp.Responses = append(mergedResp.Responses, response)
+	remoteResp, err := s.batchReadBlobsRemote(ctx, &remoteReq)
+	if err != nil {
+		return nil, err
 	}
-	return mergedResp, nil
+	localResp.Responses = append(localResp.Responses, remoteResp.Responses...)
+	return localResp, nil
 }
 
 func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
@@ -104,18 +106,18 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 		InstanceName:   readReq.InstanceName,
 		DigestFunction: readReq.DigestFunction,
 	}
-	for _, response := range readResp {
-		if response.Status != 0 {
+	for _, response := range readResp.Responses {
+		if response.Status.Code != int32(codes.OK) {
 			// ????
 			continue
 		}
-		updateReq.Requests = append(updateReq.Reqests, &repb.BatchUpdateBlobsRequest_Request{
+		updateReq.Requests = append(updateReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
 			Digest:     response.Digest,
 			Data:       response.Data,
 			Compressor: response.Compressor,
 		})
 	}
-	go s.localServer.BatchUpdateBlobs(context.Background(), updateReq)
+	go s.localServer.BatchUpdateBlobs(context.Background(), &updateReq)
 	return readResp, nil
 }
 

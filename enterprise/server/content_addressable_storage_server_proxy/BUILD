@@ -15,6 +15,7 @@ go_library(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/util/status",
+        "@org_golang_google_grpc//codes",
     ],
 )
 
